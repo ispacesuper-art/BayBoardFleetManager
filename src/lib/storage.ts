@@ -21,13 +21,21 @@ export function nextName(kind: Asset["kind"], platform: Asset["platform"], asset
   if (kind === "robot") return platform === "g1" ? `G1-${n}` : `GO2-${n}`;
   if (kind === "battery") return platform === "g1" ? `BAT-G1-${n}` : `BAT-${n}`;
   if (kind === "charger") return platform === "g1" ? `CHG-G1-${n}` : `CHG-${n}`;
+  if (kind === "addon") return platform === "g1" ? `ADD-G1-${n}` : `ADD-${n}`;
   return platform === "g1" ? `RC-G1-${n}` : `RC-${n}`;
+}
+
+export function chargerModels(platform: Asset["platform"]) {
+  return platform === "g1"
+    ? ["G1 charger"]
+    : ["Go2 standard charger", "Go2 fast charger"];
 }
 
 export function defaultModel(kind: Asset["kind"], platform: Asset["platform"]) {
   if (kind === "robot") return platform === "g1" ? "Unitree G1" : "Unitree Go2 Pro";
   if (kind === "battery") return platform === "g1" ? "G1 battery pack" : "Go2 8000 mAh";
-  if (kind === "charger") return platform === "g1" ? "G1 charger" : "Go2 charger 54V";
+  if (kind === "charger") return chargerModels(platform)[0];
+  if (kind === "addon") return platform === "g1" ? "G1 add-on" : "Go2 add-on";
   return platform === "g1" ? "G1 remote" : "Go2 remote";
 }
 

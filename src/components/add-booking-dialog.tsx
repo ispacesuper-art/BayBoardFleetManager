@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,8 +13,28 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { KitSlotMarks } from "@/components/kit-slot-marks";
+import { StatusLed } from "@/components/status-led";
 import { conflictingBooking } from "@/lib/bookings";
-import { displayName, KIND_META, type Asset, type Booking } from "@/lib/types";
+import {
+  kitAssetIds,
+  kitIncludesAll,
+  kitIsComplete,
+  kitStatus,
+  kitVessel,
+  kitsFromAssets,
+  looseAssets,
+  missingKitSlots,
+  sortKitsForBooking,
+  type TransportKit,
+} from "@/lib/kits";
+import {
+  displayName,
+  KIND_META,
+  STATUS_META,
+  type Asset,
+  type Booking,
+} from "@/lib/types";
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -39,12 +59,14 @@ export function AddBookingDialog({
   assets,
   bookings,
   onAdd,
+  initialKitId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   assets: Asset[];
   bookings: Booking[];
   onAdd: (booking: Booking) => void;
+  initialKitId?: string | null;
 }) {
   const [title, setTitle] = useState("");
   const [bookedBy, setBookedBy] = useState("");
@@ -54,15 +76,19 @@ export function AddBookingDialog({
   const [assetIds, setAssetIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const grouped = useMemo(() => {
-    const order: Asset["kind"][] = ["robot", "battery", "charger", "remote"];
-    return order
-      .map((kind) => ({
-        kind,
-        items: assets.filter((asset) => asset.kind === kind),
-      }))
-      .filter((group) => group.items.length > 0);
-  }, [assets]);
+  const kits = useMemo(
+    () => sortKitsForBooking(kitsFromAssets(assets)),
+    [assets]
+  );
+  const rack = useMemo(() => looseAssets(assets), [assets]);
+  const kitIdSet = useMemo(
+    () => new Set(kits.flatMap((kit) => kitAssetIds(kit))),
+    [kits]
+  );
+  const extras = useMemo(
+    () => rack.filter((item) => item.kind === "addon" || !kitIdSet.has(item.id)),
+    [kitIdSet, rack]
+  );
 
   function resetForm() {
     const next = defaultWindow();
@@ -75,15 +101,38 @@ export function AddBookingDialog({
     setError(null);
   }
 
+  useEffect(() => {
+    if (!open) return;
+    const next = defaultWindow();
+    setTitle("");
+    setBookedBy("");
+    setStartsAt(next.start);
+    setEndsAt(next.end);
+    setNotes("");
+    setError(null);
+    const preset = kits.find((kit) => kit.robot.id === initialKitId);
+    setAssetIds(preset ? kitAssetIds(preset) : []);
+  }, [open, initialKitId, kits]);
+
   function toggleAsset(id: string) {
     setAssetIds((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
     );
   }
 
+  function toggleKit(kit: TransportKit) {
+    const ids = kitAssetIds(kit);
+    setAssetIds((current) => {
+      if (kitIncludesAll(kit, current)) {
+        return current.filter((id) => !ids.includes(id));
+      }
+      return [...new Set([...current, ...ids])];
+    });
+  }
+
   function submit() {
     if (assetIds.length === 0) {
-      setError("Pick at least one robot or accessory.");
+      setError("Pick a transport box, or at least one unit.");
       return;
     }
     const start = new Date(startsAt);
@@ -123,7 +172,6 @@ export function AddBookingDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (next) resetForm();
         onOpenChange(next);
         if (!next) resetForm();
       }}
@@ -132,8 +180,8 @@ export function AddBookingDialog({
         <DialogHeader>
           <DialogTitle>Add booking</DialogTitle>
           <DialogDescription>
-            Holds the selected units for that window. Overlapping reservations
-            on the same gear are blocked.
+            Book a transport box to take the dog plus its paired remote,
+            battery, and charger. Add-ons can be packed later.
           </DialogDescription>
         </DialogHeader>
 
@@ -177,31 +225,83 @@ export function AddBookingDialog({
             </div>
           </div>
           <div className="grid gap-2">
-            <Label>Units</Label>
-            <div className="max-h-56 space-y-3 overflow-y-auto rounded-xl border border-white/10 p-3">
-              {grouped.map((group) => (
-                <div key={group.kind} className="space-y-1.5">
-                  <p className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-                    {KIND_META[group.kind].plural}
-                  </p>
-                  {group.items.map((asset) => (
+            <Label>Transport boxes</Label>
+            <div className="max-h-80 space-y-2 overflow-y-auto rounded-xl border border-white/10 p-3">
+              {kits.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Add a robot first, then pair its gear.
+                </p>
+              ) : (
+                kits.map((kit) => {
+                  const vessel = kitVessel(kit);
+                  const selected = kitIncludesAll(kit, assetIds);
+                  const missing = missingKitSlots(kit);
+                  const status = kitStatus(kit);
+                  const complete = kitIsComplete(kit);
+                  return (
                     <label
-                      key={asset.id}
-                      className="flex items-center gap-2 text-sm"
+                      key={kit.robot.id}
+                      className="flex items-start gap-2 rounded-lg px-1 py-1.5 text-sm"
                     >
                       <input
                         type="checkbox"
-                        checked={assetIds.includes(asset.id)}
-                        onChange={() => toggleAsset(asset.id)}
-                        className="size-3.5 accent-sky-400"
+                        checked={selected}
+                        onChange={() => toggleKit(kit)}
+                        className="mt-1 size-3.5 accent-sky-400"
                       />
-                      <span className="truncate">{displayName(asset)}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5">
+                          <StatusLed status={status} size="sm" />
+                          <span className="truncate text-foreground">
+                            Take {vessel.toLowerCase()} · {displayName(kit.robot)}
+                          </span>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
+                            {complete && status === "ready"
+                              ? "Complete"
+                              : STATUS_META[status].short}
+                          </span>
+                        </span>
+                        {missing.length > 0 ? (
+                          <span className="mt-0.5 block text-[11px] leading-4 text-amber-300/90">
+                            Missing {missing.join(", ")}
+                          </span>
+                        ) : null}
+                        <KitSlotMarks kit={kit} />
+                      </span>
                     </label>
-                  ))}
-                </div>
-              ))}
+                  );
+                })
+              )}
             </div>
           </div>
+          {extras.length > 0 ? (
+            <div className="grid gap-2">
+              <Label>Add-ons and loose gear</Label>
+              <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-xl border border-white/10 p-3">
+                {extras.map((asset) => (
+                  <label
+                    key={asset.id}
+                    className="flex items-center gap-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={assetIds.includes(asset.id)}
+                      onChange={() => toggleAsset(asset.id)}
+                      className="size-3.5 accent-sky-400"
+                    />
+                    <span className="truncate">
+                      {KIND_META[asset.kind].label} · {displayName(asset)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No extra add-ons on the rack yet. When you add them, they will
+              show up here to pack with a box.
+            </p>
+          )}
           <div className="grid gap-2">
             <Label htmlFor="booking-notes">Notes</Label>
             <Textarea

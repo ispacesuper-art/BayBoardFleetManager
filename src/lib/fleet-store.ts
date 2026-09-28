@@ -1,5 +1,6 @@
 import { copyFile, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { notifyBookingWebhook } from "@/lib/booking-webhook";
 import { applyRepairTransition } from "@/lib/repairs";
 import {
   conflictingBooking,
@@ -32,6 +33,15 @@ function seedState(): FleetState {
   };
 }
 
+function emptyState(): FleetState {
+  return {
+    assets: [],
+    repairs: [],
+    bookings: [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 let queue: Promise<unknown> = Promise.resolve();
 
 function withLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -48,8 +58,9 @@ async function ensureDirs() {
   await mkdir(UPLOAD_DIR, { recursive: true });
 }
 
+/** Valid bay file — empty assets is allowed (operator cleared the demo fleet). */
 function fromParsed(parsed: Partial<FleetState>): FleetState | null {
-  if (!Array.isArray(parsed.assets) || parsed.assets.length === 0) return null;
+  if (!Array.isArray(parsed.assets)) return null;
   return {
     assets: parsed.assets,
     repairs: Array.isArray(parsed.repairs) ? parsed.repairs : [],
@@ -73,18 +84,27 @@ export async function readFleet(): Promise<FleetState> {
       const parsed = JSON.parse(raw) as Partial<FleetState>;
       const state = fromParsed(parsed);
       if (!state) {
-        const seeded = seedState();
-        await writeFleetFile(seeded);
-        return seeded;
+        // File exists but is not a valid bay document — do not invent demo data.
+        const empty = emptyState();
+        await writeFleetFile(empty);
+        return empty;
       }
       if (!Array.isArray(parsed.bookings)) {
         await writeFleetFile(state);
       }
       return state;
-    } catch {
-      const seeded = seedState();
-      await writeFleetFile(seeded);
-      return seeded;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      // First run only: missing file gets the starter fleet once.
+      if (code === "ENOENT") {
+        const seeded = seedState();
+        await writeFleetFile(seeded);
+        return seeded;
+      }
+      // Corrupt JSON / read errors: keep an empty bay rather than restoring demo.
+      const empty = emptyState();
+      await writeFleetFile(empty);
+      return empty;
     }
   });
 }
@@ -157,7 +177,8 @@ export async function replaceFleet(state: {
 }
 
 export async function upsertBooking(booking: Booking): Promise<FleetState> {
-  return withLock(async () => {
+  let action: "created" | "updated" | null = null;
+  const state = await withLock(async () => {
     await ensureDirs();
     const current = await readUnlocked();
     const conflict = conflictingBooking(current.bookings, booking);
@@ -167,6 +188,7 @@ export async function upsertBooking(booking: Booking): Promise<FleetState> {
       throw error;
     }
     const index = current.bookings.findIndex((item) => item.id === booking.id);
+    action = index === -1 ? "created" : "updated";
     const bookings =
       index === -1
         ? [...current.bookings, booking]
@@ -176,30 +198,48 @@ export async function upsertBooking(booking: Booking): Promise<FleetState> {
       bookings,
     });
   });
+  if (action) {
+    void notifyBookingWebhook(action, booking, state.assets);
+  }
+  return state;
 }
 
 export async function cancelBooking(id: string): Promise<FleetState> {
-  return withLock(async () => {
+  let cancelled: Booking | undefined;
+  const state = await withLock(async () => {
     await ensureDirs();
     const current = await readUnlocked();
-    return persist({
+    const previous = current.bookings.find((item) => item.id === id);
+    const bookings = current.bookings.map((booking) =>
+      booking.id === id && !booking.cancelledAt
+        ? { ...booking, cancelledAt: new Date().toISOString() }
+        : booking
+    );
+    const next = await persist({
       ...current,
-      bookings: current.bookings.map((booking) =>
-        booking.id === id && !booking.cancelledAt
-          ? { ...booking, cancelledAt: new Date().toISOString() }
-          : booking
-      ),
+      bookings,
     });
+    const updated = next.bookings.find((item) => item.id === id);
+    if (previous && !previous.cancelledAt && updated?.cancelledAt) {
+      cancelled = updated;
+    }
+    return next;
   });
+  if (cancelled) {
+    void notifyBookingWebhook("cancelled", cancelled, state.assets);
+  }
+  return state;
 }
 
 async function readUnlocked(): Promise<FleetState> {
   try {
     const raw = await readFile(FLEET_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<FleetState>;
-    return fromParsed(parsed) ?? seedState();
-  } catch {
-    return seedState();
+    return fromParsed(parsed) ?? emptyState();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") return seedState();
+    return emptyState();
   }
 }
 

@@ -1,5 +1,5 @@
 export type Status = "ready" | "limited" | "down";
-export type Kind = "robot" | "battery" | "charger" | "remote";
+export type Kind = "robot" | "battery" | "charger" | "remote" | "addon";
 export type RobotPlatform = "go2" | "g1";
 
 export interface Asset {
@@ -84,6 +84,7 @@ export const KIND_META: Record<Kind, { label: string; plural: string }> = {
   battery: { label: "Battery", plural: "Batteries" },
   charger: { label: "Charger", plural: "Chargers" },
   remote: { label: "Remote", plural: "Remotes" },
+  addon: { label: "Add-on", plural: "Add-ons" },
 };
 
 export const COLOR_NAMES = ["Red", "Blue", "Black", "White", "Orange"] as const;

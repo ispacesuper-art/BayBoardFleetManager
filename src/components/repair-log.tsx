@@ -7,10 +7,18 @@ import { durationLabel } from "@/lib/repairs";
 import { formatDate } from "@/lib/storage";
 import {
   displayName,
-  STATUS_META,
   type Asset,
   type RepairRecord,
 } from "@/lib/types";
+
+function issueSummary(repair: RepairRecord) {
+  const title = repair.title.trim();
+  const detail = repair.detail.trim();
+  if (title && detail && detail !== title) return { title, detail };
+  if (title) return { title, detail: "" };
+  if (detail) return { title: detail, detail: "" };
+  return { title: "Repair", detail: "" };
+}
 
 export function RepairLog({
   repairs,
@@ -48,6 +56,7 @@ export function RepairLog({
         const asset = assets.find((item) => item.id === repair.assetId);
         if (!asset) return null;
         const open = !repair.resolvedAt;
+        const issue = issueSummary(repair);
         return (
           <li key={repair.id}>
             <button
@@ -69,20 +78,33 @@ export function RepairLog({
                     {open ? "Open" : "Resolved"}
                   </span>
                 </div>
-                <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                  {repair.title}
+                <p className="mt-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                  Issue
                 </p>
-                <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-foreground/90">
+                  {issue.title}
+                </p>
+                {issue.detail ? (
+                  <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                    {issue.detail}
+                  </p>
+                ) : null}
+                {repair.resolution ? (
+                  <>
+                    <p className="mt-2 text-[11px] font-medium tracking-wide text-emerald-400/80 uppercase">
+                      Fix
+                    </p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-emerald-300/90">
+                      {repair.resolution}
+                    </p>
+                  </>
+                ) : null}
+                <p className="mt-2 font-mono text-[11px] text-muted-foreground">
                   Opened {formatDate(repair.openedAt)}
                   {repair.resolvedAt
                     ? ` · Resolved ${formatDate(repair.resolvedAt)} · ${durationLabel(repair.openedAt, repair.resolvedAt)}`
                     : ` · still open · ${durationLabel(repair.openedAt)}`}
                 </p>
-                {repair.resolution && (
-                  <p className="mt-1 line-clamp-2 text-xs text-emerald-300/90">
-                    {repair.resolution}
-                  </p>
-                )}
               </div>
               {repair.imageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element

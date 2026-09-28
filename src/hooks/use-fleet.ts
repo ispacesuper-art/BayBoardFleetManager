@@ -281,6 +281,7 @@ export function useFleet() {
       batteries: kind("battery"),
       chargers: kind("charger"),
       remotes: kind("remote"),
+      addons: kind("addon"),
       openRepairs: repairs.filter((repair) => !repair.resolvedAt).length,
       openBookings: bookings.filter((booking) => !booking.cancelledAt).length,
     };

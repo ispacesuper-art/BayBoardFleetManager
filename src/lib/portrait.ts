@@ -26,6 +26,7 @@ export function defaultEmoji(kind: Kind, platform?: Asset["platform"]) {
   if (kind === "battery") return "🔋";
   if (kind === "charger") return "🔌";
   if (kind === "remote") return "🎮";
+  if (kind === "addon") return "📦";
   if (platform === "g1") return "🤖";
   return "🐕";
 }

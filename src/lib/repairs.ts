@@ -15,6 +15,14 @@ export function repairsFor(repairs: RepairRecord[], assetId: string) {
     });
 }
 
+function issueTitle(asset: Asset, fallback?: string) {
+  const condition = asset.condition.trim();
+  if (condition) return condition;
+  if (fallback?.trim()) return fallback.trim();
+  if (asset.status === "ready") return fallback?.trim() || "Repair";
+  return STATUS_META[asset.status].label;
+}
+
 export function applyRepairTransition(args: {
   previous: Asset | undefined;
   next: Asset;
@@ -29,12 +37,7 @@ export function applyRepairTransition(args: {
   const now = next.lastChecked;
   const openedStatus: RepairRecord["openedStatus"] =
     next.status === "down" ? "down" : "limited";
-  const title =
-    next.condition.trim() ||
-    (next.status === "ready"
-      ? existing?.title
-      : STATUS_META[next.status].label) ||
-    "Repair";
+  const notes = next.notes.trim();
 
   if (!wasOpen && isOpen && next.status !== "ready") {
     const record: RepairRecord = {
@@ -42,8 +45,8 @@ export function applyRepairTransition(args: {
       assetId: next.id,
       openedAt: now,
       openedStatus,
-      title,
-      detail: next.notes.trim(),
+      title: issueTitle(next),
+      detail: notes,
       imageUrl: repairImageUrl,
     };
     return [record, ...repairs];
@@ -54,23 +57,30 @@ export function applyRepairTransition(args: {
       repair.id === existing.id
         ? {
             ...repair,
+            // Keep the original issue text — only stamp resolution when closing.
+            title: existing.title || issueTitle(next, existing.title),
+            detail: existing.detail,
             resolvedAt: now,
-            resolution: (resolution ?? next.notes).trim() || "Returned to service",
+            resolution:
+              (resolution ?? "").trim() ||
+              notes ||
+              "Returned to service",
             imageUrl: repairImageUrl ?? repair.imageUrl,
-            title: existing.title || title,
           }
         : repair
     );
   }
 
   if (wasOpen && isOpen && existing) {
+    const nextTitle = next.condition.trim();
     return repairs.map((repair) =>
       repair.id === existing.id
         ? {
             ...repair,
             openedStatus,
-            title,
-            detail: next.notes.trim(),
+            // Don't wipe the logged issue if the operator clears the field.
+            title: nextTitle || existing.title || issueTitle(next, existing.title),
+            detail: notes || existing.detail,
             imageUrl: repairImageUrl ?? repair.imageUrl,
           }
         : repair
@@ -83,8 +93,8 @@ export function applyRepairTransition(args: {
       assetId: next.id,
       openedAt: now,
       openedStatus,
-      title,
-      detail: next.notes.trim(),
+      title: issueTitle(next),
+      detail: notes,
       imageUrl: repairImageUrl,
     };
     return [record, ...repairs];

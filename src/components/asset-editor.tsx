@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, ImagePlus, Link2, Trash2 } from "lucide-react";
+import { Check, ImagePlus, Link2, Package, Trash2 } from "lucide-react";
 import { PortraitField } from "@/components/portrait-field";
 import { StatusLed } from "@/components/status-led";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -24,10 +24,17 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { kitForRobot, kitVessel, missingKitSlots } from "@/lib/kits";
 import { durationLabel, repairsFor } from "@/lib/repairs";
-import { formatChecked, formatDate, uploadImage } from "@/lib/storage";
+import {
+  chargerModels,
+  formatChecked,
+  formatDate,
+  uploadImage,
+} from "@/lib/storage";
 import {
   displayName,
+  KIND_META,
   remoteForRobot,
   robotById,
   STATUS_META,
@@ -37,6 +44,58 @@ import {
 } from "@/lib/types";
 
 const STATUSES: Status[] = ["ready", "limited", "down"];
+
+function TransportBoxSummary({
+  asset,
+  assets,
+  onOpenAsset,
+}: {
+  asset: Asset;
+  assets: Asset[];
+  onOpenAsset: (id: string) => void;
+}) {
+  const kit = kitForRobot(assets, asset);
+  const vessel = kitVessel(kit);
+  const missing = missingKitSlots(kit);
+  const extras = [...kit.batteries, ...kit.chargers, ...kit.addons];
+
+  return (
+    <section className="grid gap-3 rounded-xl border border-white/10 bg-secondary/20 p-3">
+      <div className="flex items-center gap-2">
+        <Package className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-medium">Transport {vessel.toLowerCase()}</h3>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Booking this robot can take the whole {vessel.toLowerCase()}: the dog,
+        paired remote, batteries, chargers, and any assigned add-ons.
+      </p>
+      {extras.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {extras.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onOpenAsset(item.id)}
+              className="rounded-full bg-secondary px-2 py-1 text-[11px] text-foreground hover:bg-secondary/80"
+            >
+              {KIND_META[item.kind].label} · {displayName(item)}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Assign a battery and charger to this robot so they travel in the{" "}
+          {vessel.toLowerCase()}. Add-ons can be packed later.
+        </p>
+      )}
+      {missing.length > 0 ? (
+        <p className="text-[11px] text-amber-300/90">
+          Missing {missing.join(", ")}.
+        </p>
+      ) : null}
+    </section>
+  );
+}
 
 function SaveFieldButton({
   label,
@@ -128,6 +187,46 @@ export function AssetEditor({
     [assets, asset.assignedToId]
   );
 
+  const remoteLinkItems = useMemo(() => {
+    const items: Record<string, string> = { none: "Choose a remote" };
+    for (const remote of linkableRemotes) {
+      const owner = robotById(assets, remote.assignedToId);
+      items[remote.id] = owner
+        ? `${remote.name} · on ${displayName(owner)}`
+        : `${remote.name} · on the rack`;
+    }
+    return items;
+  }, [assets, linkableRemotes]);
+
+  const robotLinkItems = useMemo(() => {
+    const items: Record<string, string> = {
+      none: "Unassigned / on the rack",
+    };
+    for (const robot of assignedOptions) {
+      const taken = remoteForRobot(assets, robot.id);
+      items[robot.id] =
+        taken && taken.id !== asset.id
+          ? `${displayName(robot)} · has ${taken.name}`
+          : displayName(robot);
+    }
+    return items;
+  }, [assignedOptions, assets, asset.id]);
+
+  const assignedRobotItems = useMemo(() => {
+    const items: Record<string, string> = {
+      none: "Unassigned / on the rack",
+    };
+    for (const robot of assignedOptions) {
+      items[robot.id] = displayName(robot);
+    }
+    return items;
+  }, [assignedOptions]);
+
+  const chargerModelOptions = useMemo(() => {
+    const listed = chargerModels(draft.platform);
+    return listed.includes(draft.model) ? listed : [draft.model, ...listed];
+  }, [draft.model, draft.platform]);
+
   const closingShop = asset.status !== "ready" && draft.status === "ready";
 
   const conditionHint =
@@ -200,7 +299,14 @@ export function AssetEditor({
     if (draft.kind === "battery") {
       next.cycles = draft.cycles;
     }
-    if (draft.kind === "battery" || draft.kind === "charger") {
+    if (draft.kind === "charger") {
+      next.model = draft.model;
+    }
+    if (
+      draft.kind === "battery" ||
+      draft.kind === "charger" ||
+      draft.kind === "addon"
+    ) {
       next.assignedToId = draft.assignedToId;
     }
     onSave(next, {
@@ -371,26 +477,21 @@ export function AssetEditor({
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Select
                       value={remoteToLink}
+                      items={remoteLinkItems}
                       onValueChange={(value) => {
-                        if (value) setRemoteToLink(value);
+                        if (value != null) setRemoteToLink(String(value));
                       }}
                     >
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger className="w-full min-w-0 flex-1">
                         <SelectValue placeholder="Choose a remote" />
                       </SelectTrigger>
                       <SelectContent alignItemWithTrigger={false} align="start">
                         <SelectItem value="none">Choose a remote</SelectItem>
-                        {linkableRemotes.map((remote) => {
-                          const owner = robotById(assets, remote.assignedToId);
-                          return (
-                            <SelectItem key={remote.id} value={remote.id}>
-                              {remote.name}
-                              {owner
-                                ? ` · on ${displayName(owner)}`
-                                : " · on the rack"}
-                            </SelectItem>
-                          );
-                        })}
+                        {linkableRemotes.map((remote) => (
+                          <SelectItem key={remote.id} value={remote.id}>
+                            {remoteLinkItems[remote.id]}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <Button
@@ -416,6 +517,14 @@ export function AssetEditor({
                   </p>
                 </div>
               </section>
+            )}
+
+            {asset.kind === "robot" && (
+              <TransportBoxSummary
+                asset={asset}
+                assets={assets}
+                onOpenAsset={onOpenAsset}
+              />
             )}
 
             {asset.kind === "remote" && (
@@ -465,26 +574,21 @@ export function AssetEditor({
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Select
                       value={robotToLink}
+                      items={robotLinkItems}
                       onValueChange={(value) => {
-                        if (value) setRobotToLink(value);
+                        if (value != null) setRobotToLink(String(value));
                       }}
                     >
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger className="w-full min-w-0 flex-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent alignItemWithTrigger={false} align="start">
                         <SelectItem value="none">Unassigned / on the rack</SelectItem>
-                        {assignedOptions.map((robot) => {
-                          const taken = remoteForRobot(assets, robot.id);
-                          return (
-                            <SelectItem key={robot.id} value={robot.id}>
-                              {displayName(robot)}
-                              {taken && taken.id !== asset.id
-                                ? ` · has ${taken.name}`
-                                : ""}
-                            </SelectItem>
-                          );
-                        })}
+                        {assignedOptions.map((robot) => (
+                          <SelectItem key={robot.id} value={robot.id}>
+                            {robotLinkItems[robot.id]}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <Button
@@ -620,26 +724,58 @@ export function AssetEditor({
               />
             </div>
 
-            {(draft.kind === "battery" || draft.kind === "charger") && (
+            {draft.kind === "charger" && (
+              <div className="grid gap-2">
+                <Label>Model</Label>
+                <Select
+                  value={draft.model}
+                  items={Object.fromEntries(
+                    chargerModelOptions.map((item) => [item, item])
+                  )}
+                  onValueChange={(value) =>
+                    setDraft({ ...draft, model: String(value) })
+                  }
+                >
+                  <SelectTrigger className="w-full min-w-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false} align="start">
+                    {chargerModelOptions.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {(draft.kind === "battery" ||
+              draft.kind === "charger" ||
+              draft.kind === "addon") && (
               <div className="grid gap-2">
                 <Label>Assigned robot</Label>
                 <Select
                   value={draft.assignedToId ?? "none"}
+                  items={assignedRobotItems}
                   onValueChange={(value) =>
                     setDraft({
                       ...draft,
-                      assignedToId: value === "none" ? undefined : String(value),
+                      assignedToId:
+                        value == null || value === "none"
+                          ? undefined
+                          : String(value),
                     })
                   }
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full min-w-0">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false} align="start">
                     <SelectItem value="none">Unassigned / on the rack</SelectItem>
                     {assignedOptions.map((robot) => (
                       <SelectItem key={robot.id} value={robot.id}>
-                        {displayName(robot)}
+                        {assignedRobotItems[robot.id]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -684,13 +820,17 @@ export function AssetEditor({
             ) : (
               history.map((repair) => {
                 const openTicket = !repair.resolvedAt;
+                const issueTitle = repair.title.trim() || "Repair";
+                const issueDetail = repair.detail.trim();
+                const showDetail =
+                  Boolean(issueDetail) && issueDetail !== issueTitle;
                 return (
                   <article
                     key={repair.id}
                     className="rounded-xl border border-white/10 bg-secondary/40 p-3"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium">{repair.title}</p>
+                      <p className="text-sm font-medium">{issueTitle}</p>
                       <span className="inline-flex items-center gap-1.5 text-[11px]">
                         <StatusLed
                           status={openTicket ? repair.openedStatus : "ready"}
@@ -699,11 +839,16 @@ export function AssetEditor({
                         {openTicket ? "Open" : "Resolved"}
                       </span>
                     </div>
-                    {repair.detail && (
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {repair.detail}
-                      </p>
-                    )}
+                    {showDetail ? (
+                      <>
+                        <p className="mt-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                          Issue
+                        </p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                          {issueDetail}
+                        </p>
+                      </>
+                    ) : null}
                     {repair.imageUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -719,9 +864,14 @@ export function AssetEditor({
                         : ` · still open · ${durationLabel(repair.openedAt)}`}
                     </p>
                     {repair.resolution && (
-                      <p className="mt-1 text-xs text-emerald-300/90">
-                        {repair.resolution}
-                      </p>
+                      <>
+                        <p className="mt-2 text-[11px] font-medium tracking-wide text-emerald-400/80 uppercase">
+                          Fix
+                        </p>
+                        <p className="mt-0.5 text-xs text-emerald-300/90">
+                          {repair.resolution}
+                        </p>
+                      </>
                     )}
                   </article>
                 );

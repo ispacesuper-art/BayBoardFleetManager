@@ -1,4 +1,4 @@
-import { Battery, Gamepad2, Plug } from "lucide-react";
+import { Battery, Gamepad2, Package, Plug } from "lucide-react";
 import type { Asset } from "@/lib/types";
 
 function DogMark({ className }: { className?: string }) {
@@ -51,6 +51,7 @@ export function KindIcon({ asset, className }: { asset: Asset; className?: strin
   if (asset.kind === "battery") return <Battery className={className} />;
   if (asset.kind === "charger") return <Plug className={className} />;
   if (asset.kind === "remote") return <Gamepad2 className={className} />;
+  if (asset.kind === "addon") return <Package className={className} />;
   if (asset.platform === "g1") return <HumanoidMark className={className} />;
   return <DogMark className={className} />;
 }

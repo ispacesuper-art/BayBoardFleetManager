@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   Download,
+  Package,
   Plus,
   Search,
   Upload,
@@ -15,9 +17,11 @@ import { AddBookingDialog } from "@/components/add-booking-dialog";
 import { AssetCard } from "@/components/asset-card";
 import { AssetEditor } from "@/components/asset-editor";
 import { BookingLog } from "@/components/booking-log";
+import { BoxBoard } from "@/components/box-board";
 import { RepairLog } from "@/components/repair-log";
+import { SiteNav } from "@/components/site-nav";
 import { StatusLed } from "@/components/status-led";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -33,6 +37,7 @@ import { formatChecked } from "@/lib/storage";
 import {
   displayName,
   isAttention,
+  KIND_META,
   remotesForRobot,
   STATUS_META,
   type Asset,
@@ -45,9 +50,11 @@ type FilterId =
   | "robots"
   | "go2"
   | "g1"
+  | "boxes"
   | "battery"
   | "charger"
   | "remote"
+  | "addon"
   | "attention"
   | "history"
   | "bookings";
@@ -57,9 +64,11 @@ const FILTERS: { id: FilterId; label: string }[] = [
   { id: "robots", label: "Robots" },
   { id: "go2", label: "Go2 dogs" },
   { id: "g1", label: "G1 humanoids" },
+  { id: "boxes", label: "Boxes" },
+  { id: "remote", label: "Remotes" },
   { id: "battery", label: "Batteries" },
   { id: "charger", label: "Chargers" },
-  { id: "remote", label: "Remotes" },
+  { id: "addon", label: "Add-ons" },
   { id: "attention", label: "Needs repair" },
   { id: "history", label: "Repair log" },
   { id: "bookings", label: "Bookings" },
@@ -73,7 +82,12 @@ const STATUS_FILTERS: { id: "all" | Status; label: string }[] = [
 ];
 
 function matchesFilter(asset: Asset, filter: FilterId) {
-  if (filter === "all" || filter === "history" || filter === "bookings") {
+  if (
+    filter === "all" ||
+    filter === "history" ||
+    filter === "bookings" ||
+    filter === "boxes"
+  ) {
     return true;
   }
   if (filter === "robots") return asset.kind === "robot";
@@ -150,7 +164,13 @@ export function FleetBoard() {
   }, [assets, filter, statusFilter, query, robots]);
 
   const grouped = useMemo(() => {
-    const order: Asset["kind"][] = ["robot", "battery", "charger", "remote"];
+    const order: Asset["kind"][] = [
+      "robot",
+      "remote",
+      "battery",
+      "charger",
+      "addon",
+    ];
     return order
       .map((kind) => ({
         kind,
@@ -198,6 +218,7 @@ export function FleetBoard() {
     <div className="flex flex-1 flex-col">
       <header className="border-b border-white/5 bg-black/20">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
+          <SiteNav />
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="font-mono text-[11px] tracking-[0.22em] text-sky-300/80 uppercase">
@@ -222,6 +243,10 @@ export function FleetBoard() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Link href="/book" className={buttonVariants()}>
+                <CalendarClock data-icon="inline-start" />
+                Book
+              </Link>
               <Button
                 variant="outline"
                 disabled={backupBusy}
@@ -351,6 +376,7 @@ export function FleetBoard() {
                 variant={filter === item.id ? "default" : "outline"}
                 onClick={() => setFilter(item.id)}
               >
+                {item.id === "boxes" && <Package data-icon="inline-start" />}
                 {item.id === "attention" && <Wrench data-icon="inline-start" />}
                 {item.id === "bookings" && (
                   <CalendarClock data-icon="inline-start" />
@@ -443,6 +469,17 @@ export function FleetBoard() {
               setSelectedId(id);
             }}
           />
+        ) : filter === "boxes" ? (
+          <BoxBoard
+            assets={assets}
+            query={query}
+            statusFilter={statusFilter}
+            onBook={() => setBookingOpen(true)}
+            onOpenAsset={(id) => {
+              setEditorTab("log");
+              setSelectedId(id);
+            }}
+          />
         ) : visible.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 px-6 py-16 text-center">
             <Wrench className="mb-3 size-8 text-muted-foreground" />
@@ -463,13 +500,7 @@ export function FleetBoard() {
               <section key={group.kind} className="flex flex-col gap-3">
                 <div className="flex items-baseline justify-between">
                   <h2 className="font-heading text-sm tracking-wide text-muted-foreground uppercase">
-                    {group.kind === "robot"
-                      ? "Robots"
-                      : group.kind === "battery"
-                        ? "Batteries"
-                        : group.kind === "charger"
-                          ? "Chargers"
-                          : "Remotes"}
+                    {KIND_META[group.kind].plural}
                   </h2>
                   <span className="font-mono text-xs text-muted-foreground">
                     {group.items.length}

@@ -72,7 +72,7 @@ export function parseBackup(value: unknown): FleetBackup | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Partial<FleetBackup> & Partial<FleetState>;
 
-  if (!Array.isArray(raw.assets) || raw.assets.length === 0) return null;
+  if (!Array.isArray(raw.assets)) return null;
   if (!raw.assets.every(isAsset)) return null;
 
   const repairs = Array.isArray(raw.repairs) ? (raw.repairs as RepairRecord[]) : [];

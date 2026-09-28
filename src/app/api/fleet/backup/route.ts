@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   const backup = parseBackup(payload);
   if (!backup) {
     return NextResponse.json(
-      { error: "Not a Bay Board backup (needs an assets list)" },
+      { error: "Not a Bay Board backup (needs a valid assets list)" },
       { status: 400 }
     );
   }

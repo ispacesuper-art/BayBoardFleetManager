@@ -21,11 +21,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { defaultModel, nextName } from "@/lib/storage";
+import { chargerModels, defaultModel, nextName } from "@/lib/storage";
 import type { Asset, Kind, RobotPlatform, Status } from "@/lib/types";
 import { KIND_META } from "@/lib/types";
 
-const KINDS: Kind[] = ["robot", "battery", "charger", "remote"];
+const KINDS: Kind[] = ["robot", "remote", "battery", "charger", "addon"];
 const PLATFORMS: { id: RobotPlatform; label: string }[] = [
   { id: "go2", label: "Go2 (dog)" },
   { id: "g1", label: "G1 (humanoid)" },
@@ -62,9 +62,8 @@ export function AddAssetDialog({
       : ["Unitree Go2 Pro", "Unitree Go2 Edu"];
   const batteryModels =
     platform === "g1" ? ["G1 battery pack"] : ["Go2 8000 mAh", "Go2 15000 mAh"];
-  const chargerModels =
-    platform === "g1" ? ["G1 charger"] : ["Go2 charger 54V"];
   const remoteModels = platform === "g1" ? ["G1 remote"] : ["Go2 remote"];
+  const addonModels = platform === "g1" ? ["G1 add-on"] : ["Go2 add-on"];
 
   const models =
     kind === "robot"
@@ -72,8 +71,10 @@ export function AddAssetDialog({
       : kind === "battery"
         ? batteryModels
         : kind === "charger"
-          ? chargerModels
-          : remoteModels;
+          ? chargerModels(platform)
+          : kind === "addon"
+            ? addonModels
+            : remoteModels;
 
   function applyKind(nextKind: Kind) {
     setKind(nextKind);
@@ -120,14 +121,21 @@ export function AddAssetDialog({
         <DialogHeader>
           <DialogTitle>Add to the bay</DialogTitle>
           <DialogDescription>
-            Log a robot or a piece of gear. Suggested tag: {name}.
+            Log a robot, a piece of kit, or a later add-on. Suggested tag:{" "}
+            {name}.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3">
           <div className="grid gap-2">
             <Label>Type</Label>
-            <Select value={kind} onValueChange={(value) => applyKind(value as Kind)}>
+            <Select
+              value={kind}
+              items={Object.fromEntries(
+                KINDS.map((item) => [item, KIND_META[item].label])
+              )}
+              onValueChange={(value) => applyKind(value as Kind)}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -145,6 +153,9 @@ export function AddAssetDialog({
             <Label>Platform</Label>
             <Select
               value={platform}
+              items={Object.fromEntries(
+                PLATFORMS.map((item) => [item.id, item.label])
+              )}
               onValueChange={(value) => applyPlatform(value as RobotPlatform)}
             >
               <SelectTrigger className="w-full">
@@ -162,7 +173,12 @@ export function AddAssetDialog({
 
           <div className="grid gap-2">
             <Label>Model</Label>
-            <Select value={model} onValueChange={(value) => setModel(String(value))}>
+            <Select
+              key={`${kind}-${platform}`}
+              value={model}
+              items={Object.fromEntries(models.map((item) => [item, item]))}
+              onValueChange={(value) => setModel(String(value))}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -224,6 +240,11 @@ export function AddAssetDialog({
             <Label>Starting status</Label>
             <Select
               value={status}
+              items={{
+                ready: "Green · working",
+                limited: "Yellow · with conditions",
+                down: "Red · out of commission",
+              }}
               onValueChange={(value) => setStatus(value as Status)}
             >
               <SelectTrigger className="w-full">
