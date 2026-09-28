@@ -25,8 +25,18 @@ export async function GET() {
 
 export async function POST(request: Request) {
   let payload: unknown;
+  const contentType = request.headers.get("content-type") ?? "";
   try {
-    payload = await request.json();
+    if (contentType.includes("multipart/form-data")) {
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) {
+        return NextResponse.json({ error: "Choose a backup JSON file" }, { status: 400 });
+      }
+      payload = JSON.parse(await file.text());
+    } else {
+      payload = await request.json();
+    }
   } catch {
     return NextResponse.json({ error: "Backup file is not valid JSON" }, { status: 400 });
   }

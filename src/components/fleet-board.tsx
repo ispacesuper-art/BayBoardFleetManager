@@ -107,7 +107,6 @@ export function FleetBoard() {
     upsertBooking,
     cancelBooking,
     replace,
-    exportBackup,
     retry,
     stats,
     robots,
@@ -179,21 +178,6 @@ export function FleetBoard() {
       .filter((group) => group.items.length > 0);
   }, [visible]);
 
-  async function handleExport() {
-    setBackupBusy(true);
-    setBackupMessage(null);
-    try {
-      await exportBackup();
-      setBackupMessage("Backup downloaded.");
-    } catch (err) {
-      setBackupMessage(
-        err instanceof Error ? err.message : "Could not export backup"
-      );
-    } finally {
-      setBackupBusy(false);
-    }
-  }
-
   async function confirmImport() {
     if (!pendingImport) return;
     setBackupBusy(true);
@@ -228,9 +212,9 @@ export function FleetBoard() {
                 Bay Board
               </h1>
               <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                Saved on this PC — robots, photos, repairs, and bookings stay
-                here when you close the browser or start a new session. Pros
-                are named by colour.
+                Saved on this hangar PC — everyone who opens this same address
+                sees the same robots, photos, repairs, and bookings. Pros are
+                named by colour.
               </p>
               <p
                 className="mt-2 inline-flex items-center gap-1.5 text-xs text-sky-300/80"
@@ -247,14 +231,14 @@ export function FleetBoard() {
                 <CalendarClock data-icon="inline-start" />
                 Book
               </Link>
-              <Button
-                variant="outline"
-                disabled={backupBusy}
-                onClick={() => void handleExport()}
+              <a
+                href="/api/fleet/backup"
+                download
+                className={buttonVariants({ variant: "outline" })}
               >
                 <Download data-icon="inline-start" />
                 Export
-              </Button>
+              </a>
               <Button
                 variant="outline"
                 disabled={backupBusy}

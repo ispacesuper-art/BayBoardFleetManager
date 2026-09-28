@@ -126,7 +126,7 @@ export function useFleet() {
 
   useEffect(() => {
     void refresh();
-    const poll = window.setInterval(() => void refresh(), 4000);
+    const poll = window.setInterval(() => void refresh(), 2000);
     const onFocus = () => void refresh();
     window.addEventListener("focus", onFocus);
     return () => {
@@ -210,19 +210,13 @@ export function useFleet() {
   }, []);
 
   const replace = useCallback(async (file: File) => {
-    const text = await file.text();
-    let payload: unknown;
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      throw new Error("That file is not valid JSON");
-    }
     inFlight += 1;
     try {
+      const form = new FormData();
+      form.append("file", file);
       const response = await fetch("/api/fleet/backup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: form,
       });
       if (!response.ok) {
         const err = (await response.json().catch(() => null)) as {
@@ -242,21 +236,6 @@ export function useFleet() {
     } finally {
       inFlight -= 1;
     }
-  }, []);
-
-  const exportBackup = useCallback(async () => {
-    const response = await fetch("/api/fleet/backup", { cache: "no-store" });
-    if (!response.ok) throw new Error("Could not export backup");
-    const blob = await response.blob();
-    const stamp = new Date().toISOString().slice(0, 10);
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `bay-board-backup-${stamp}.json`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
   }, []);
 
   const retry = useCallback(() => {
@@ -301,7 +280,6 @@ export function useFleet() {
     upsertBooking,
     cancelBooking,
     replace,
-    exportBackup,
     retry,
     stats,
     robots,
